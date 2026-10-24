@@ -1,0 +1,4 @@
+doc_id,title,publisher,source_url,local_file,wifi_generation,document_version,language,usage_note
+cisco_wifi6,IEEE 802.11ax: The Sixth Generation of Wi-Fi,Cisco,https://www.cisco.com/c/en/us/products/collateral/wireless/white-paper-c11-740788.pdf,data/raw/cisco_wifi6.pdf,Wi-Fi 6,2020,en,Check redistribution terms
+zte_wifi6,Wi-Fi 6 Technology and Evolution White Paper,ZTE,https://www.zte.com.cn/content/dam/zte-site/res-www-zte-com-cn/mediares/zte/files/pdf/white_book/Wi-Fi_6_Technology_and_Evolution_White_Paper-202009232125.pdf,data/raw/zte_wifi6.pdf,Wi-Fi 6,2020,en,Check redistribution terms
+spirent_ofdma,Key Considerations for Wi-Fi 6 Multi-User OFDMA Testing,Spirent,https://assets.ctfassets.net/wcxs9ap8i19s/2cAbZviv89ZKQZrXo9ywKE/3b7de78578f352b84f3649716a9385e9/wp-key-considerations-for-wi-fi-6-multi-user-ofdma-testing.pdf,data/raw/spirent_ofdma.pdf,Wi-Fi 6,,en,Check redistribution terms

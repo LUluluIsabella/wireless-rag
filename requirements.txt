@@ -1,0 +1,10 @@
+pymupdf
+sentence-transformers
+faiss-cpu
+rank-bm25
+jieba
+openai
+python-dotenv
+streamlit
+numpy
+pytest
