@@ -5,7 +5,7 @@
 
 Wireless-RAG 支持使用中文提问，从中英文 Wi-Fi 6 / IEEE 802.11ax 技术资料中检索证据，再由大语言模型生成带引用的中文回答。系统提供 Dense、BM25、Hybrid (RRF) 三种检索模式，以及命令行与 Streamlit 网页演示。回答中的 `[S1]` 等引用由程序映射至实际文档片段、PDF 页序号和来源链接；资料不足时应明确说明。
 
-> **项目状态（2026-10-24）**：RAG 基础闭环、三模式检索对照实验、初步生成评测、引用测试和 Streamlit Demo 已运行。实验数据规模较小，Gold 标注尚未全面人工复核；本项目目前是 RAG 系统，**尚未实现 Agent 自主工具调用**。
+> **当前状态（2026-10-31）**：RAG 与 Agent 核心开发完成，CLI、批量评测和 Streamlit 双模式已跑通。Agent 单元测试 16/16 通过；真实评测 8 条完成，状态符合 6/7、工具要求满足 6/6。1 条无效引用保留为待复核记录。本轮 Git 提交与推送尚未确认。
 
 ## Features / 核心功能
 
@@ -14,7 +14,9 @@ Wireless-RAG 支持使用中文提问，从中英文 Wi-Fi 6 / IEEE 802.11ax 技
 - **Grounded Generation**：将检索证据交给 LLM 生成中文答案，标注 `[S1]` 等引用，证据不足时提示无法确认。
 - **Citation Validation**：检查生成的引用是否存在，并映射至 Chunk ID、文档标题、PDF 页序号及源 URL；对无效引用执行拦截。
 - **Evaluation**：Hit@5、MRR@5 检索评测，以及小规模 Citation Support、Abstention 和 Prompt Injection 样例验证。
-- **Demo**：PowerShell CLI 与 Streamlit 网页，支持切换 Dense / BM25 / Hybrid，并展开已引用的原始证据。
+- **Agent Tool Calling**：模型选择搜索文档或补读 PDF 页面，程序执行参数校验、证据编号与去重、工具结果反馈、预算约束和异常处理。
+- **Execution Trace**：记录工具调用与错误，网页展示执行轨迹并支持下载 JSON。
+- **Demo**：PowerShell CLI 与 Streamlit 网页，支持 RAG / Agent 切换；RAG 支持 Dense / BM25 / Hybrid，Agent 沿用后端检索配置，并展示已引用证据及工具轨迹。
 
 ## Architecture / 系统架构
 
@@ -32,6 +34,10 @@ flowchart TD
     H --> I["引用校验与来源映射"]
     I --> J["答案 + PDF 原文与来源"]
 ```
+
+### Agent 执行方式
+
+模型接收问题后选择工具，程序校验并执行，再将证据或错误反馈给模型。模型根据结果继续调用工具或返回最终答案；程序检查输出结构和引用编号。每次任务独立管理证据与消息状态，执行受工具次数、模型轮数及时间预算检查约束。
 
 ## Tech Stack / 技术栈
 
@@ -102,7 +108,15 @@ EMBEDDING_MODEL=intfloat/multilingual-e5-small
 .\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-浏览器打开 `http://localhost:8501`，输入问题，选择检索模式和 Top-K。已引用证据可展示文档标题、PDF 页序号、原文及来源链接。模型和检索索引使用 Streamlit 资源缓存；重新构建索引后应清除缓存或重启应用。
+浏览器打开 `http://localhost:8501`，选择 RAG 或 Agent。RAG 可设置检索模式和 Top-K；Agent 根据问题选择工具，检索参数与预算沿用后端配置。已引用证据可展示文档标题、PDF 页序号、原文及来源链接。模型和检索索引使用 Streamlit 资源缓存；重新构建索引后应清除缓存或重启应用。
+
+### Agent CLI 与批量评测
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.agent_query --question "OFDMA 和 MU-MIMO 有什么区别？"
+.\.venv\Scripts\python.exe -m scripts.evaluate_agent --dataset evaluation/agent_dev.jsonl --output evaluation/agent_dev_results.json
+.\.venv\Scripts\python.exe -m pytest tests/test_agent.py -q
+```
 
 ## Evaluation / 实验结果
 
@@ -135,6 +149,15 @@ EMBEDDING_MODEL=intfloat/multilingual-e5-small
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
+### Agent Evaluation（2026-10-31）
+
+- Mock 单元测试：16 passed in 0.50s。
+- 真实用例：8 条完成；answered 5、abstained 2、invalid_citation 1。
+- 状态符合率：6/7（85.71%）；工具要求满足率：6/6（100%）。
+- 平均工具调用：2.25 次；平均运行耗时：8.12325 秒。
+- 状态预期为 null、工具要求为空的用例分别不计入对应分母。上述指标不等同于答案准确率或证据支持率。
+- 1 条无效引用的根因与重测记录待补，不宣称全部用例通过。
+
 详见 [实验报告](docs/experiments.md)。
 
 ## Project Structure / 主要目录
@@ -160,12 +183,14 @@ wireless-rag/
 2. Gold Chunk 标注为候选版本，初步对照数据不等同于公开 Benchmark。
 3. 引用编号有效不代表被引用的每个结论都有证据支持；完整逐句语义审计尚未完成。
 4. Prompt Injection 仅测试过单个模拟攻击样例；无效引用解析仍需扩展异常格式测试。
-5. Streamlit 已验证页面和 Hybrid 问答渲染，来源展开、其他检索模式切换与错误路径尚未逐项验收。
+5. Streamlit 双模式已获用户手动验证；尚无全面 UI 自动化或多用户并发评测记录。
+6. Agent 时间预算包含请求前检查，不代表正在执行的同步工具可以被强制中断。
 
 ## Roadmap / 后续计划
 
 - 完善异常处理、更多单元测试、干净环境复现和演示材料。
-- 增加 **Agent Tool Calling**：提供 `search_wifi_docs(query)` 与只读 `get_pdf_page(doc_id, page)`，允许模型根据问题选择工具、记录调用轨迹，并评估工具选择与证据正确性。**该功能尚未实现。**
+- Agent 核心功能已完成；后续扩充真实评测与攻击用例，复核无效引用，逐项审核证据支持。
+- 完成最终全量检查、handoff 更新与本轮 Git 提交推送。
 
 ## References & Engineering Notes
 

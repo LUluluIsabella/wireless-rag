@@ -1,12 +1,17 @@
 # Wireless-RAG 工程问题与改进日志
 
+> **当前状态（2026-10-31）**：RAG 与 Agent 核心开发完成，CLI、批量评测和 Streamlit 双模式已跑通。Agent 单元测试 16/16 通过；真实评测 8 条完成，状态符合 6/7、工具要求满足 6/6。1 条无效引用保留为待复核记录。本轮 Git 提交与推送尚未确认。
+
 ## 问题与技术设计索引
 
 | ID | 模块 | 内容 | 状态 |
 |---|---|---|---|
 | ISSUE-001 | Chunking | Token 超限与动态窗口修复 | 基础测试通过 |
-| TECH-001 | Retrieval | Dense + BM25 + RRF 混合检索 | 待实现 |
+| TECH-001 | Retrieval | Dense + BM25 + RRF 混合检索 | 已实现并完成基线评测 |
 | ISSUE-002 | PDF Parsing | 表格与双栏解析导致检索噪声 | Frozen |
+| TECH-002 | Agent | 工具调用、预算、证据管理与异常处理 | 核心开发完成，16项单元测试通过 |
+| TECH-003 | Streamlit | RAG / Agent 双模式及轨迹下载 | 用户手动验收通过 |
+| ISSUE-004 | Agent Citation | 批量评测出现1条 invalid_citation | 保留记录，具体原因待补 |
 | ISSUE-003 | Hybrid Retrieval 排名退化 | dev_005 的正确证据由 Dense Rank 4 降至 Hybrid Rank 10，导致 Hit@5 失败；已分析可能原因，暂缓优化。 | Open / Deferred |
 ---
 
@@ -44,7 +49,7 @@ Tokenizer 的 Encode/Decode 不一定严格可逆。原始 Token 窗口长度符
 
 **阶段：** 第 10 节
 
-**状态：** 设计完成，待实现
+**状态：** 已实现并完成基线评测（以下保留原始设计）
 
 ### 1. 设计动机
 
@@ -91,7 +96,7 @@ User Query
             LLM Context
 ```
 
-计划实现：
+原设计接口示意（混合检索现已实现）：
 
 ```python
 dense_search(question, top_k=20)
@@ -305,8 +310,8 @@ spirent_ofdma_p001_c001
 - 保留现有 Dense、BM25 和 RRF 实现。
 - 保留失败案例及可选改进方向。
 - 不修改 Baseline RRF 参数。
-- 后续完成 Test Set 评测时，再判断是否有必要优化。
-- 继续推进 RAG MVP 的后续阶段。
+- Test Set 基线评测已完成；保留该 Dev 失败案例，后续依据证据审核决定是否优化。
+- RAG 闭环与 Agent 扩展现已完成，当前推进交付收尾。
 
 ### 6. 工程经验
 
@@ -321,3 +326,56 @@ spirent_ofdma_p001_c001
 **结论：** Hybrid 在当前 Dev Set 上提升了整体 MRR@5，但存在个别排名退化案例。问题已记录，暂缓优化，优先完成 RAG 系统闭环。
 
 **Status：Open / Deferred**
+
+
+## 2026-10-31：第19阶段 Agent 开发与验收
+
+### 完成范围
+
+- 实现 WifiAgent 工具调用循环：模型决定调用 search_wifi_docs 或 get_pdf_page，程序校验参数、执行工具并回传结果。
+- 每次 run 独立管理消息、证据编号与轨迹；重复片段复用编号。
+- 增加工具调用预算、模型请求轮数限制、时间预算检查及异常处理。请求前时间检查不代表同步工具可被强制中断。
+- 完成 Agent CLI、批量评测入口及 Streamlit RAG / Agent 双模式。
+- 网页展示答案、引用证据、工具轨迹和统计信息；使用 session_state 保留结果，支持下载 JSON。
+- 按用户反馈，CLI 与 Streamlit 已手动验证成功。截图可确认 Agent answered、2 次工具调用、2 轮模型请求、页面查询总耗时 12.94 秒。该单次页面耗时与批量评测平均耗时采用不同测量范围，不能直接比较。
+
+### 自动测试
+
+命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_agent.py -q
+```
+
+用户提交结果：**16 passed in 0.50s**。
+
+覆盖正常工具循环、重复证据编号、无效及缺失引用、工具预算、非法工具及参数、工具异常、模型异常、最终 JSON 错误和请求前超时。使用 Mock，不调用真实 API；不评估真实检索质量及语义支持。
+
+### 真实模型批量评测
+
+- 数据集：evaluation/agent_dev.jsonl，共 8 条。
+- 入口：scripts/evaluate_agent.py。
+- 输出：evaluation/agent_dev_results.json。
+
+| 指标 | 结果 |
+|---|---:|
+| 已完成用例 | 8 |
+| answered | 5 |
+| abstained | 2 |
+| invalid_citation | 1 |
+| 状态符合率 | 6/7，85.71% |
+| 工具要求满足率 | 6/6，100% |
+| 平均工具调用次数 | 2.25 |
+| 平均运行耗时 | 8.12325 秒 |
+
+口径：expected_answerable 为 null 的用例不计入状态符合率；required_tools 为空的用例不计入工具要求满足率。工具成功执行不代表选择最优或调用必要；引用编号有效不代表原文支持全部结论。执行失败不能视为正确拒答。
+
+用户随后表示已完成指标核验并进入网页阶段，但未提供修订后的完整评测结果。因此上述数字保留为已观测批次；1 条 invalid_citation 不标记为已修复，其具体用例、原因与修复后重测结果尚无记录。不能据此声称 8/8 全部通过或得到答案准确率。
+
+### 当前结论与交付事项
+
+**Agent 核心功能开发完成，已完成基础自动测试、小规模真实评测及网页集成。**
+
+- 当前范围是面向 Wi-Fi 6 文档的工具调用型 Agent；小规模评测不代表生产环境可靠性或全面抗注入能力。
+- 待记录：无效引用用例的具体原因和处理结论、人工证据支持审核明细。
+- 待完成或补充结果：最终全量 pytest、git diff --check、handoff 更新、Git 提交及推送。此前基线的提交状态不能作为本轮新增代码已提交的证明。
